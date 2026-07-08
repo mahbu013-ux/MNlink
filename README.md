@@ -1,2 +1,127 @@
-# MNlink
-contains user scripts for MNlink website
+// ==UserScript==
+// @name        MNLINK Cluster ID Copier + physical description display
+// @namespace   Minitex
+// @version     1.2
+// @description Extracts and copies record ID from MNLink URLs upon element availability allows physical description to be displayed in the main table.
+// @match       https://search.mnlink.org/*
+// @grant       none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // Function to extract and copy ID to clipboard
+function copyIDToClipboard() {
+    const url = window.location.href;
+    const match = url.match(/Record\/([^/?]+)/);
+    if (match && match[1]) {
+        navigator.clipboard.writeText(match[1]).then(() => {
+            console.log('Record ID copied to clipboard:', match[1]);
+            alert('Record ID copied to clipboard: ' + match[1]);
+        }).catch(err => {
+            console.error('Failed to copy text: ', err);
+        });
+    }
+}
+
+    // Attempt to add the button to the page
+    function addButton() {
+        const permalinkButton = document.querySelector('a.permalink-record.toolbar-btn');
+        if (permalinkButton) {
+            const button = document.createElement('button');
+            button.textContent = 'Copy Record ID';
+            button.style.marginLeft = '10px';
+            button.onclick = copyIDToClipboard;
+            permalinkButton.parentNode.insertBefore(button, permalinkButton.nextSibling);
+            console.log('Button added successfully.');
+        } else {
+            console.log('Permalink button not found.');
+        }
+    }
+
+    // Check if the permalink button exists, if not, use MutationObserver
+    if (document.querySelector('a.permalink-record.toolbar-btn')) {
+        addButton();
+    } else {
+        // Observer to track DOM changes
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.addedNodes.length) {
+                    addButton();
+                    observer.disconnect(); // Stop observing once the button is added
+                }
+            });
+        });
+
+        // Start observing the DOM
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
+})();
+
+
+
+
+// addition
+
+// 1. Emulate single user click on the description tab (to load physical description)
+(function() {
+    'use strict';
+    if (!sessionStorage.getItem('tabClicked')) {
+        const descButton = document.querySelector('a[href*="Description"], a[id*="description"], #tabnav a[href*="desc"]') ||
+                           Array.from(document.querySelectorAll('#tabnav a, .nav-tabs a')).find(el => el.textContent.trim().toLowerCase().includes('description'));
+
+        if (descButton) {
+            sessionStorage.setItem('tabClicked', 'true');
+            descButton.click();
+        }
+    }
+    requestAnimationFrame(() => {
+        window.scrollTo(0, 0);
+    });
+
+// Inserts the physical description as a new row directly above the Language row in the table
+function tryInsert() {
+    const headers = Array.from(document.querySelectorAll('th'));
+    const sourceLabelEl = headers.find(el => el.textContent.trim().includes('Physical Description:'));
+    if (!sourceLabelEl) return false;
+    const physdiscValue = sourceLabelEl.nextElementSibling?.textContent?.trim();
+    if (!physdiscValue) return false;
+    const languageLabelEl = headers.find(el => el.textContent.trim().includes('Language:'));
+    if (languageLabelEl) {
+        const languageRow = languageLabelEl.closest('tr');
+        if (languageRow.previousElementSibling?.classList.contains('custom-phys-row')) {
+            return true;
+        }
+        const newRow = document.createElement('tr');
+        newRow.classList.add('custom-phys-row');
+        const newHeader = document.createElement('th');
+        newHeader.textContent = 'Physical Description:';
+        const newData = document.createElement('td');
+        newData.textContent = physdiscValue;
+
+        newRow.appendChild(newHeader);
+        newRow.appendChild(newData);
+
+        languageRow.parentNode.insertBefore(newRow, languageRow);
+        console.log("Tampermonkey: Success! Inserted Physical Description row above Language.");
+        sessionStorage.removeItem('tabClicked');
+        return true;
+    }
+    return false;
+}
+
+    // Poll to allow AJAX time to fetch data
+    const checkExist = setInterval(() => {
+        if (tryInsert()) {
+            clearInterval(checkExist);
+            console.log("Tampermonkey: Loop cleared successfully.");
+        }
+    }, 300);
+    setTimeout(() => {
+        clearInterval(checkExist);
+        console.log("Tampermonkey: Script timed out looking for elements.");
+    }, 10000);
+})();
