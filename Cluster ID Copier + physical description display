@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name        MNLINK Cluster ID Copier + physical description display
+// @name        MNLINK Cluster ID Copier + physical description table display
 // @namespace   Minitex
 // @version     1.2
 // @description Extracts and copies record ID from MNLink URLs upon element availability allows physical description to be displayed in the main table.
