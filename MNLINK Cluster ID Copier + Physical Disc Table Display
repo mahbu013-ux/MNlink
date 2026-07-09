@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name        MNLINK Cluster ID Copier + Physical Disc Para
+// @name        MNLINK Cluster ID Copier + Physical Disc Table Row
 // @namespace   Minitex
 // @version     1.1
 // @description Extracts and copies record ID from MNLink URLs upon element availability + allows physical description info to be easier to access
