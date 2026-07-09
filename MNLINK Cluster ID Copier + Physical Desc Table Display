@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        MNLINK Cluster ID Copier + physical description table display
+// @name        MNLINK Cluster ID Copier + Physical Disc Table Row
 // @namespace   Minitex
-// @version     1.2
-// @description Extracts and copies record ID from MNLink URLs upon element availability allows physical description to be displayed in the main table.
+// @version     1.1
+// @description Extracts and copies record ID from MNLink URLs upon element availability + allows physical description info to be easier to access
 // @match       https://search.mnlink.org/*
 // @grant       none
 // ==/UserScript==
@@ -69,59 +69,82 @@ function copyIDToClipboard() {
 // 1. Emulate single user click on the description tab (to load physical description)
 (function() {
     'use strict';
-    if (!sessionStorage.getItem('tabClicked')) {
-        const descButton = document.querySelector('a[href*="Description"], a[id*="description"], #tabnav a[href*="desc"]') ||
-                           Array.from(document.querySelectorAll('#tabnav a, .nav-tabs a')).find(el => el.textContent.trim().toLowerCase().includes('description'));
 
-        if (descButton) {
-            sessionStorage.setItem('tabClicked', 'true');
-            descButton.click();
-        }
+    if (window.__mnlinkPhysicalDescInjected) {
+        return;
     }
+    window.__mnlinkPhysicalDescInjected = true;
+
+    const descButton = Array.from(document.querySelectorAll('#tabnav a, .nav-tabs a'))
+        .find(el => el.textContent.trim().toLowerCase().includes('description'));
+
+    if (descButton && !sessionStorage.getItem('tabClicked')) {
+        sessionStorage.setItem('tabClicked', 'true');
+        descButton.click();
+    }
+
     requestAnimationFrame(() => {
         window.scrollTo(0, 0);
     });
 
-// Inserts the physical description as a new row directly above the Language row in the table
-function tryInsert() {
-    const headers = Array.from(document.querySelectorAll('th'));
-    const sourceLabelEl = headers.find(el => el.textContent.trim().includes('Physical Description:'));
-    if (!sourceLabelEl) return false;
-    const physdiscValue = sourceLabelEl.nextElementSibling?.textContent?.trim();
-    if (!physdiscValue) return false;
-    const languageLabelEl = headers.find(el => el.textContent.trim().includes('Language:'));
-    if (languageLabelEl) {
-        const languageRow = languageLabelEl.closest('tr');
-        if (languageRow.previousElementSibling?.classList.contains('custom-phys-row')) {
-            return true;
-        }
-        const newRow = document.createElement('tr');
-        newRow.classList.add('custom-phys-row');
-        const newHeader = document.createElement('th');
-        newHeader.textContent = 'Physical Description:';
-        const newData = document.createElement('td');
-        newData.textContent = physdiscValue;
+    // Inserts the physical description into the metadata table before the Language row.
+    function tryInsert() {
+        const headers = Array.from(document.querySelectorAll('th'));
+        const table = document.querySelector('table.table.table-striped');
+        if (!table) return false;
 
-        newRow.appendChild(newHeader);
-        newRow.appendChild(newData);
+        const labelEl = headers.find(el => el.textContent.trim().includes('Physical Description:'));
+        if (!labelEl) return false;
+
+        const physdiscValue = labelEl.nextElementSibling?.textContent?.trim();
+        if (!physdiscValue) return false;
+
+        const languageRow = Array.from(table.querySelectorAll('tr')).find(row => {
+            const cells = Array.from(row.querySelectorAll('th, td'));
+            return cells.some(cell => cell.textContent.trim().toLowerCase().includes('language'));
+        });
+
+        if (!languageRow) return false;
+
+        const existingRow = Array.from(table.querySelectorAll('tr')).find(row => {
+            const cells = Array.from(row.querySelectorAll('th, td'));
+            return cells.some(cell => cell.textContent.trim().toLowerCase().includes('physical description'));
+        });
+
+        if (existingRow) {
+            existingRow.querySelector('td, th:last-child')?.remove();
+        }
+
+        const newRow = document.createElement('tr');
+        const newLabel = document.createElement('th');
+        newLabel.textContent = 'Physical Description';
+        const newValue = document.createElement('td');
+        newValue.textContent = physdiscValue;
+        newRow.appendChild(newLabel);
+        newRow.appendChild(newValue);
 
         languageRow.parentNode.insertBefore(newRow, languageRow);
-        console.log("Tampermonkey: Success! Inserted Physical Description row above Language.");
+        console.log('Tampermonkey: Success! Inserted description into table:', physdiscValue);
         sessionStorage.removeItem('tabClicked');
         return true;
     }
-    return false;
-}
 
-    // Poll to allow AJAX time to fetch data
-    const checkExist = setInterval(() => {
+    // Poll to allow AJAX time to fetch data, but stop once the field is clearly absent.
+    let attempts = 0;
+    const maxAttempts = 20;
+    const checkExist = window.setInterval(() => {
+        attempts += 1;
+
         if (tryInsert()) {
-            clearInterval(checkExist);
-            console.log("Tampermonkey: Loop cleared successfully.");
+            window.clearInterval(checkExist);
+            console.log('Tampermonkey: Loop cleared successfully.');
+            return;
+        }
+
+        if (attempts >= maxAttempts) {
+            window.clearInterval(checkExist);
+            sessionStorage.removeItem('tabClicked');
+            console.log('Tampermonkey: No physical description found after polling; stopping.');
         }
     }, 300);
-    setTimeout(() => {
-        clearInterval(checkExist);
-        console.log("Tampermonkey: Script timed out looking for elements.");
-    }, 10000);
 })();
