@@ -69,18 +69,41 @@ function copyIDToClipboard() {
 // 1. Emulate single user click on the description tab (to load physical description)
 (function() {
     'use strict';
-    if (!sessionStorage.getItem('tabClicked')) {
-        const descButton = document.querySelector('a[href*="Description"], a[id*="description"], #tabnav a[href*="desc"]')
-                           Array.from(document.querySelectorAll('#tabnav a, .nav-tabs a')).find(el => el.textContent.trim().toLowerCase().includes('description'));
 
-        if (descButton) {
+    const pageKeyName = '__mnlinkPhysicalDescPage';
+    let pendingNavigationReset = null;
+
+    function getCurrentPageKey() {
+        return window.location.href.split('#')[0];
+    }
+
+    function shouldRunForCurrentPage() {
+        return window[pageKeyName] !== getCurrentPageKey();
+    }
+
+    function markCurrentPageProcessed() {
+        window[pageKeyName] = getCurrentPageKey();
+    }
+
+    function initializePhysicalDescription() {
+        if (!shouldRunForCurrentPage()) {
+            return;
+        }
+
+        markCurrentPageProcessed();
+        sessionStorage.removeItem('tabClicked');
+
+        const descButton = Array.from(document.querySelectorAll('#tabnav a, .nav-tabs a'))
+            .find(el => el.textContent.trim().toLowerCase().includes('description'));
+
+        if (descButton && !sessionStorage.getItem('tabClicked')) {
             sessionStorage.setItem('tabClicked', 'true');
             descButton.click();
         }
-    }
-    requestAnimationFrame(() => {
-        window.scrollTo(0, 0);
-    });
+
+        requestAnimationFrame(() => {
+            window.scrollTo(0, 0);
+        });
 
 // Inserts the physical description into the target paragraph & creates target paragraph if it doesn't exist
 function tryInsert() {
@@ -113,15 +136,81 @@ function tryInsert() {
     return false;
 }
 
-    // Poll to allow AJAX time to fetch data
-    const checkExist = setInterval(() => {
-        if (tryInsert()) {
-            clearInterval(checkExist);
-            console.log("Tampermonkey: Loop cleared successfully.");
+        // Poll to allow AJAX time to fetch data, but stop once the field is clearly absent.
+        let attempts = 0;
+        const maxAttempts = 20;
+        const checkExist = window.setInterval(() => {
+            attempts += 1;
+
+            if (tryInsert()) {
+                window.clearInterval(checkExist);
+                console.log('Tampermonkey: Loop cleared successfully.');
+                return;
+            }
+
+            if (attempts >= maxAttempts) {
+                window.clearInterval(checkExist);
+                sessionStorage.removeItem('tabClicked');
+                console.log('Tampermonkey: No physical description found after polling; stopping.');
+            }
+        }, 300);
+    }
+
+    function scheduleReinitialize() {
+        if (pendingNavigationReset) {
+            window.clearTimeout(pendingNavigationReset);
         }
-    }, 300);
-    setTimeout(() => {
-        clearInterval(checkExist);
-        console.log("Tampermonkey: Script timed out looking for elements.");
-    }, 10000);
+
+        pendingNavigationReset = window.setTimeout(() => {
+            pendingNavigationReset = null;
+            initializePhysicalDescription();
+        }, 600);
+    }
+
+    const pagerSelector = [
+        'a[rel="next"]',
+        'a[rel="prev"]',
+        'a[rel="previous"]',
+        'a[title*="Next"]',
+        'a[title*="Previous"]',
+        'a[aria-label*="Next"]',
+        'a[aria-label*="Previous"]',
+        '.pager a',
+        '.pagination a'
+    ].join(',');
+
+    document.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target.closest(pagerSelector) : null;
+        if (!target) return;
+
+        const label = `${target.textContent || ''} ${target.getAttribute('aria-label') || ''} ${target.getAttribute('title') || ''}`.toLowerCase();
+        if (label.includes('next') || label.includes('prev') || label.includes('previous')) {
+            scheduleReinitialize();
+        }
+    }, true);
+
+    const originalPushState = window.history.pushState;
+    window.history.pushState = function(...args) {
+        const result = originalPushState.apply(this, args);
+        scheduleReinitialize();
+        return result;
+    };
+
+    const originalReplaceState = window.history.replaceState;
+    window.history.replaceState = function(...args) {
+        const result = originalReplaceState.apply(this, args);
+        scheduleReinitialize();
+        return result;
+    };
+
+    window.addEventListener('popstate', scheduleReinitialize);
+
+    const observer = new MutationObserver(() => {
+        if (document.querySelector('table.table.table-striped') && shouldRunForCurrentPage()) {
+            initializePhysicalDescription();
+        }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    initializePhysicalDescription();
 })();
